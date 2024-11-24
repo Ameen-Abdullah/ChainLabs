@@ -8,14 +8,40 @@ import { RenderPass } from 'three/examples/jsm/Addons.js';
 import { UnrealBloomPass } from 'three/examples/jsm/Addons.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { RGBELoader } from 'three/examples/jsm/Addons.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import EventBus from "./utils/EventBus";
+import WebGL from "./modules/WebGL";
+import { ShaderPass } from 'three/examples/jsm/Addons.js';
+
+
+window.EventBus = EventBus;
+
+gsap.registerPlugin(ScrollTrigger);
+
+if (!window.isDev) window.isDev = false;
+
+const webglMng = new WebGL({
+  $wrapper: document.body,
+});
+
+
+let fluidCanvas = new THREE.CanvasTexture(document.querySelector("canvas.fluid"));
+
+
+
+
+// const fluidTexture = new THREE.Texture(fluidCanvas);
+// fluidTexture.minFilter = THREE.LinearFilter;
+// fluidTexture.magFilter = THREE.LinearFilter;
+// fluidTexture.format = THREE.RGBAFormat;
 
 
 let scene, camera, renderer, width, height;
 
 //geometry       
-let geometry,controls;
+let geometry, controls;
 
 //meshes
 
@@ -39,14 +65,15 @@ material = new THREE.ShaderMaterial({
   vertexShader: vertex,
   fragmentShader: fragment,
   uniforms: {
-    time: { value: 0 }
+    time: { value: 0 },
+    fluidTexture: { value: fluidCanvas }
   }
 })
 
 mesh = new THREE.Mesh(geometry, material);
 // scene.add(mesh);
 
-renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, canvas: document.querySelector("canvas.threejs") });
 renderer.setSize(width, height);
 renderer.setAnimationLoop(animate);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -54,13 +81,15 @@ document.body.appendChild(renderer.domElement);
 
 
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = .6; 
+renderer.toneMappingExposure = .6;
 
 
 
 //
-controls = new OrbitControls(camera,renderer.domElement);
-controls.enableDamping = true;
+// controls = new OrbitControls(camera,renderer.domElement);
+// controls.enableDamping = true;
+// controls.enableZoom = false;
+// controls.enablePan = false;
 
 
 
@@ -74,6 +103,18 @@ const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
 composer.addPass(renderPass);
 
+const customPass = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    tFluid: { value: fluidCanvas },
+
+  },
+  vertexShader: vertex,
+  fragmentShader: fragment,
+});
+
+composer.addPass(customPass);
+
 // Create the UnrealBloomPass
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
@@ -85,16 +126,12 @@ composer.addPass(bloomPass);
 //lights
 
 
-
-
-
 let hrdis = [
   "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_01_1k.hdr",
   "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_04_1k.hdr",
   "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_07_1k.hdr",
   "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_07_1k.hdr",
   "",
-
 ]
 
 
@@ -125,14 +162,11 @@ let hdri = new RGBELoader().load(hrdis[0], function (texture) {
   const plight = new THREE.PointLight("#0867C0", 2);
   plight.position.set(0, -.2, -0.3);
 
-  scene.add(directionalLight,directionalLight2,plight);
+  scene.add(directionalLight, directionalLight2, plight);
   const directionalLightHelper = new THREE.DirectionalLightHelper(directionalLight, 5);
-  const directionalLightHelper2 = new THREE.DirectionalLightHelper(directionalLight2,.1);
+  const directionalLightHelper2 = new THREE.DirectionalLightHelper(directionalLight2, .1);
 
   // scene.add(directionalLightHelper,directionalLightHelper2);
-
-
-
 });
 
 const draco = new DRACOLoader()
@@ -141,17 +175,17 @@ draco.setDecoderPath('/draco/');
 const loader = new GLTFLoader()
 loader.setDRACOLoader(draco);
 
-let circleNode, iceCubeNode,FloatingCubeNode;
+let circleNode, iceCubeNode, FloatingCubeNode;
 
 let group = new THREE.Group();
 scene.add(group);
 
 let textureLoader = new THREE.TextureLoader();
 
-let image = textureLoader.load('/h1.jpg',(texture)=>{
+let image = textureLoader.load('/h1.jpg', (texture) => {
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1,1);
+  texture.repeat.set(1, 1);
 });
 
 loader.load(
@@ -194,10 +228,10 @@ loader.load(
         let material = new THREE.MeshStandardMaterial({
           // color: "#0e20e0e",
           color: "#777777",
-          map : image
+          map: image
         });
         child.material = material;
-        
+
         let s = 1.;
       }
 
@@ -205,7 +239,7 @@ loader.load(
         child.material.roughness = .9;
       }
 
-      
+
       if (child.isMesh && child.name === 'Cube065') {
         FloatingCubeNode = child;
         child.position.x = .3;
@@ -241,15 +275,41 @@ document.addEventListener('mousemove', (event) => {
   mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
 });
 
+
+
+
+// gsap animation
+
+const tl = gsap.timeline({
+  scrollTrigger: {
+    trigger: '#main',
+    start: 'top top',
+    end: '600vh',
+    scrub: true,
+    pin: true,
+    markers: true,
+  }
+});
+
+tl.to(camera.rotation, {
+  duration: 3,
+  y: 1.57,
+  ease: "power1.out",
+});
+
+
 function animate(time) {
-  controls.update();
-
+  // controls.update();
+  fluidCanvas.needsUpdate = true;
+  // fluidTexture.needsUpdate = true;
   material.uniforms.time.value = time / 1000;
+  customPass.uniforms.tFluid.value = fluidCanvas;
 
-  gsap.to(camera.position,{
-    x : mouseX * .1,
-    y : mouseY * .1,
-    duration : 1
+  // customPass.uniforms.tDiffuse.value = fluidTexture;
+  gsap.to(camera.position, {
+    x: mouseX * .1,
+    y: mouseY * .1,
+    duration: 1
   })
 
   camera.lookAt(scene.position);
